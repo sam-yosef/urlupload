@@ -9,49 +9,53 @@ logging.basicConfig(level=logging.DEBUG,
 logger = logging.getLogger(__name__)
 
 import os
+import sqlite3
 
-from config import Config
+# the secret configuration specific things
+if bool(os.environ.get("WEBHOOK", False)):
+    from sample_config import Config
+else:
+    from config import Config
+
 # the Strings used for this "thing"
 from translation import Translation
 
-from pyrogram import filters
-from database.adduser import AddUser
-from pyrogram import Client as Clinton
+import pyrogram
 logging.getLogger("pyrogram").setLevel(logging.WARNING)
 
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.types.bots_and_keyboards import InlineKeyboardButton, InlineKeyboardMarkup
 
 
-@Clinton.on_message(filters.private & filters.command(["help"]))
+@pyrogram.Client.on_message(pyrogram.filters.command(["help"]))
 async def help_user(bot, update):
-    # logger.info(update)
-    await AddUser(bot, update)
-    await bot.send_message(
-        chat_id=update.chat.id,
-        text=Translation.HELP_USER,
-        parse_mode="html",
-        disable_web_page_preview=True,
-        reply_to_message_id=update.message_id
-    )
+    if update.from_user.id in Config.AUTH_USERS:
+        # logger.info(update)
+        await bot.send_message(
+            chat_id=update.chat.id,
+            text=Translation.HELP_USER,
+            parse_mode="html",
+            disable_web_page_preview=True,
+            reply_to_message_id=update.message_id
+        )
 
 
-@Clinton.on_message(filters.private & filters.command(["start"]))
+@pyrogram.Client.on_message(pyrogram.filters.command(["start"]))
 async def start(bot, update):
-    # logger.info(update)
-    await AddUser(bot, update)
-    await bot.send_message(
-        chat_id=update.chat.id,
-        text=Translation.START_TEXT.format(update.from_user.mention),
-        reply_markup=InlineKeyboardMarkup(
-            [
+    if update.from_user.id in Config.AUTH_USERS:
+        # logger.info(update)
+        await bot.send_message(
+            chat_id=update.chat.id,
+            text=Translation.START_TEXT.format(update.from_user.first_name),
+            reply_markup=InlineKeyboardMarkup(
                 [
-                    InlineKeyboardButton(
-                        "Source code ⚡", url="https://t.me/+uPg3TPNFuckwMDU0"
-                    ),
-                    InlineKeyboardButton("Project Channel 👨🏻‍💻", url="https://t.me/+uPg3TPNFuckwMDU0"),
-                ],
-                [InlineKeyboardButton("Developer 👨‍⚖️", url="https://t.me/A7_SYR")],
-            ]
-        ),
-        reply_to_message_id=update.message_id
-    )
+                    [
+                        InlineKeyboardButton(
+                            "Source", url="https://github.com/X-Gorn/X-URL-Uploader"
+                        ),
+                        InlineKeyboardButton("Project Channel", url="https://t.me/xTeamBots"),
+                    ],
+                    [InlineKeyboardButton("Author", url="https://t.me/xgorn")],
+                ]
+            ),
+            reply_to_message_id=update.message_id
+        )

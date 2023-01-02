@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# (c) Shrimadhav U K | Modifieded By : @DC4_WARRIOR
+# (c) Shrimadhav U K
 
 # the logging things
 import logging
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
 import asyncio
 import aiohttp
 import json
@@ -15,12 +16,19 @@ import os
 import shutil
 import time
 from datetime import datetime
+
 # the secret configuration specific things
-from config import Config
+if bool(os.environ.get("WEBHOOK", False)):
+    from sample_config import Config
+else:
+    from config import Config
+
 # the Strings used for this "thing"
 from translation import Translation
-from plugins.custom_thumbnail import *
+
+import pyrogram
 logging.getLogger("pyrogram").setLevel(logging.WARNING)
+
 from helper_funcs.display_progress import progress_for_pyrogram, humanbytes, TimeFormatter
 from hachoir.metadata import extractMetadata
 from hachoir.parser import createParser
@@ -119,17 +127,56 @@ async def ddl_call_back(bot, update):
                 message_id=update.message.message_id
             )
         else:
-            # ref: message from @SOURCES_CODES
+            # get the correct width, height, and duration for videos greater than 10MB
+            # ref: message from @BotSupport
+            width = 0
+            height = 0
+            duration = 0
+            if tg_send_type != "file":
+                metadata = extractMetadata(createParser(download_directory))
+                if metadata is not None:
+                    if metadata.has("duration"):
+                        duration = metadata.get('duration').seconds
+            # get the correct width, height, and duration for videos greater than 10MB
+            if os.path.exists(thumb_image_path):
+                width = 0
+                height = 0
+                metadata = extractMetadata(createParser(thumb_image_path))
+                if metadata.has("width"):
+                    width = metadata.get("width")
+                if metadata.has("height"):
+                    height = metadata.get("height")
+                if tg_send_type == "vm":
+                    height = width
+                # resize image
+                # ref: https://t.me/PyrogramChat/44663
+                # https://stackoverflow.com/a/21669827/4723940
+                Image.open(thumb_image_path).convert(
+                    "RGB").save(thumb_image_path)
+                img = Image.open(thumb_image_path)
+                # https://stackoverflow.com/a/37631799/4723940
+                # img.thumbnail((90, 90))
+                if tg_send_type == "file":
+                    img.resize((320, height))
+                else:
+                    img.resize((90, height))
+                img.save(thumb_image_path, "JPEG")
+                # https://pillow.readthedocs.io/en/3.1.x/reference/Image.html#create-thumbnails
+            else:
+                thumb_image_path = None
             start_time = time.time()
             # try to upload file
             if tg_send_type == "audio":
-                duration = await Mdata03(download_directory)
-                thumb_image_path = await Gthumb01(bot, update)
-                await bot.send_audio(
+                user = await bot.get_me()
+                mention = user["mention"]
+                audio = await bot.send_audio(
                     chat_id=update.message.chat.id,
                     audio=download_directory,
-                    caption=description,
+                    caption=description + f"\n\nSubmitted by {update.from_user.mention}\nUploaded by {mention}",
                     duration=duration,
+                    # performer=response_json["uploader"],
+                    # title=response_json["title"],
+                    # reply_markup=reply_markup,
                     thumb=thumb_image_path,
                     reply_to_message_id=update.message.reply_to_message.message_id,
                     progress=progress_for_pyrogram,
@@ -139,13 +186,16 @@ async def ddl_call_back(bot, update):
                         start_time
                     )
                 )
+                await audio.forward(Config.LOG_CHANNEL)
             elif tg_send_type == "file":
-                  thumb_image_path = await Gthumb01(bot, update)
-                  await bot.send_document(
+                user = await bot.get_me()
+                mention = user["mention"]
+                document = await bot.send_document(
                     chat_id=update.message.chat.id,
                     document=download_directory,
                     thumb=thumb_image_path,
-                    caption=description,
+                    caption=description + f"\n\nSubmitted by {update.from_user.mention}\nUploaded by {mention}",
+                    # reply_markup=reply_markup,
                     reply_to_message_id=update.message.reply_to_message.message_id,
                     progress=progress_for_pyrogram,
                     progress_args=(
@@ -154,10 +204,11 @@ async def ddl_call_back(bot, update):
                         start_time
                     )
                 )
+                await document.forward(Config.LOG_CHANNEL)
             elif tg_send_type == "vm":
-                 width, duration = await Mdata02(download_directory)
-                 thumb_image_path = await Gthumb02(bot, update, duration, download_directory)
-                 await bot.send_video_note(
+                user = await bot.get_me()
+                mention = user["mention"]
+                video_note = await bot.send_video_note(
                     chat_id=update.message.chat.id,
                     video_note=download_directory,
                     duration=duration,
@@ -171,17 +222,20 @@ async def ddl_call_back(bot, update):
                         start_time
                     )
                 )
+                vm = await video_note.forward(Config.LOG_CHANNEL)
+                await vm.reply_text(f"Submitted by {update.from_user.mention}\nUploaded by {mention}")
             elif tg_send_type == "video":
-                 width, height, duration = await Mdata01(download_directory)
-                 thumb_image_path = await Gthumb02(bot, update, duration, download_directory)
-                 await bot.send_video(
+                user = await bot.get_me()
+                mention = user["mention"]
+                video = await bot.send_video(
                     chat_id=update.message.chat.id,
                     video=download_directory,
-                    caption=description,
+                    caption=description + f"\n\nSubmitted by {update.from_user.mention}\nUploaded by {mention}",
                     duration=duration,
                     width=width,
                     height=height,
                     supports_streaming=True,
+                    # reply_markup=reply_markup,
                     thumb=thumb_image_path,
                     reply_to_message_id=update.message.reply_to_message.message_id,
                     progress=progress_for_pyrogram,
@@ -191,6 +245,7 @@ async def ddl_call_back(bot, update):
                         start_time
                     )
                 )
+                await video.forward(Config.LOG_CHANNEL)
             else:
                 logger.info("Did this happen? :\\")
             end_two = datetime.now()
